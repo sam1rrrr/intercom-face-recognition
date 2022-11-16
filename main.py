@@ -1,43 +1,71 @@
 import cv2
-import random
+import face_recognition
+
+import time
 import os
 
-face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_alt2.xml')
-cap = cv2.VideoCapture(0)
+import pickle
 
-CATCH_FACES = False # сохранять лица в кадре
+from api import Intercom
+
+intercom = Intercom()
+
+#cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(intercom.stream_url) # стрим
+
+face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_alt2.xml') # натренированный каскад
+
+
+SAVE_FACES = False # сохранять лица
+FACE_RECOGNITION_ENABLE = True # распознавать лица
+
+with open('data.pickle', 'rb') as f:
+    encodings_db = pickle.load(f) # кодировки всех лиц
+
+
+frames_count = 0 # кол-во кадров
 
 while True:
-    ret, img = cap.read()
+    frames_count += 1
+    ret = cap.grab()
 
-    k = cv2.waitKey(30) # номер введеной кнопки
+    if frames_count % 10 == 0:
+        ret, frame = cap.retrieve()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) # серая картинка
 
-    # кнопка выхода (ESC)
-    if k == 27:
+        faces = face_cascade.detectMultiScale(gray, 1.3, 2)
+        
+        for (x, y, w, h) in faces:
+            face_image = frame[y:y+h, x:x+w] # обрезка изображения
+
+            # сохранение лица в папку
+            if SAVE_FACES:
+                number = len(os.listdir('faces'))
+                filename = f'faces/{number}.jpg'
+
+                cv2.imwrite(filename, face_image)
+
+            if FACE_RECOGNITION_ENABLE:
+                try:
+                    face_encodings = face_recognition.face_encodings(face_image)[0] # данные лица
+                except IndexError:
+                    continue
+
+                compare_result = face_recognition.compare_faces(encodings_db, face_encodings) # сравнение лица с базой данных
+
+            if FACE_RECOGNITION_ENABLE and True in compare_result:
+                #intercom.open_door() # открытие домофона
+
+                color = (0, 255, 0) # зеленый цвет в BGR
+            else:
+                color = (0, 0, 255) # красный цвет
+
+            cv2.rectangle(frame, (x, y), (x+w, y+h), color, 2) # отрисовка прямоугольника
+        
+        cv2.imshow('video', frame)
+    
+    # ESCAPE для выхода
+    if cv2.waitKey(1) == 27:
         break
-    
-    # кнопка захвата экрана (ENTER)
-    if k == 13:
-        filename = f'faces/ENTER_{random.randint(100000, 999999)}.jpg'
-        cv2.imwrite(filename, img)
-    
-    # преобразование картинки в ч/б
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-
-    faces = face_cascade.detectMultiScale(gray, 1.1, 4) # все лица в кадре
-    if len(faces) > 0 and CATCH_FACES:
-        # сохранение лиц в папке faces
-        number = len(os.listdir('faces'))
-        filename = f'faces/{number}.jpg'
-
-        cv2.imwrite(filename, img)
-
-    # отрисовка прямоугольника
-    for (x, y, w, h) in faces:
-        color = (255, 255, 0) # BGR COLOUR
-        cv2.rectangle(img, (x, y), (x+w, y+h), (255, 255, 0), 2)
-    
-    cv2.imshow('img', img)
-
-cap.release() 
+cap.release()
